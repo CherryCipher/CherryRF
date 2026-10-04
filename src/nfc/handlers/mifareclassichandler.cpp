@@ -107,30 +107,23 @@ bool MifareClassicHandler::write(const std::vector<uint8_t>& data)
 
     for (uint8_t block = FIRST_DATA_BLOCK; block < TOTAL_BLOCKS; block++)
     {
-        if (isSectorTrailer(block))
-            continue;
-
-        if (offset >= data.size())
-            break;
-
-        if (!authenticate(block))
-            return false;
+        if (isSectorTrailer(block)) continue;
+        if (offset >= data.size()) break;
+        if (!authenticate(block)) return false;
 
         uint8_t blockData[BLOCK_SIZE] = {0};
 
         size_t remaining = data.size() - offset;
-        size_t bytesToCopy = remaining >= BLOCK_SIZE
-            ? BLOCK_SIZE
-            : remaining;
+        size_t bytesToCopy = remaining >= BLOCK_SIZE ? BLOCK_SIZE : remaining;
 
-        memcpy(
-            blockData,
-            data.data() + offset,
-            bytesToCopy
-        );
+        if (bytesToCopy < BLOCK_SIZE)
+        {
+            if (!nfc.readClassicBlock(block, blockData)) return false;
+        }
 
-        if (!nfc.writeClassicBlock(block, blockData))
-            return false;
+        memcpy(blockData, data.data() + offset, bytesToCopy);
+
+        if (!nfc.writeClassicBlock(block, blockData)) return false;
 
         offset += bytesToCopy;
     }
