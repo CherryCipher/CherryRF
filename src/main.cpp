@@ -14,6 +14,21 @@
 
 #include "web/WebAppManager.h"
 
+/*
+ * ESP32-C5 I2C buses:
+ *
+ * Wire:
+ *   PN532
+ *   SDA GPIO8
+ *   SCL GPIO9
+ *
+ * Wire1:
+ *   OLED
+ *   SDA GPIO2
+ *   SCL GPIO3
+ */
+TwoWire OLEDWire(1);
+
 ButtonManager buttons(
     Config::BUTTON_UP,
     Config::BUTTON_DOWN,
@@ -24,12 +39,13 @@ ButtonManager buttons(
 DisplayManager display(
     Config::OLED_WIDTH,
     Config::OLED_HEIGHT,
-    Config::OLED_ADDRESS
+    Config::OLED_ADDRESS,
+    OLEDWire
 );
 
 NFCManager nfc(
-    Config::I2C_SDA,
-    Config::I2C_SCL
+    Config::NFC_SDA,
+    Config::NFC_SCL
 );
 
 WebAppManager webApp;
@@ -48,18 +64,37 @@ void setup()
     Serial.println("          CherryRF");
     Serial.println("============================");
 
-    /*
-     * OLED and PN532 share the same I2C bus.
-     * NFCManager currently initializes Wire using the known-working
-     * PN532 setup, so do not initialize another I2C instance.
-     */
-
     buttons.begin();
+
+    /*
+     * Start OLED on the ESP32-C5 secondary / LP I2C bus.
+     */
+    Serial.println("[CherryRF] Starting OLED I2C...");
+
+    if (!OLEDWire.begin(Config::OLED_SDA, Config::OLED_SCL, 100000))
+    {
+        Serial.println("[CherryRF] OLED I2C initialization failed.");
+
+        while (true) delay(1000);
+    }
+
+    Serial.println("[CherryRF] OLED I2C started.");
 
     if (!display.begin())
     {
         Serial.println("[CherryRF] OLED initialization failed.");
+
+        while (true) delay(1000);
     }
+
+    Serial.println("[CherryRF] OLED started.");
+
+    /*
+     * Start PN532 on the primary I2C bus.
+     *
+     * NFCManager initializes Wire using GPIO8/GPIO9.
+     */
+    Serial.println("[CherryRF] Starting PN532...");
 
     if (!nfc.start())
     {
@@ -71,8 +106,7 @@ void setup()
         display.centered(34, "CHECK WIRING");
         display.show();
 
-        while (true)
-            delay(1000);
+        while (true) delay(1000);
     }
 
     context.nfc = &nfc;

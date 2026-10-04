@@ -1,13 +1,14 @@
 #pragma once
 
 #include <Arduino.h>
+#include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 
 class DisplayManager
 {
 public:
-    DisplayManager(uint16_t width, uint16_t height, uint8_t address);
+    DisplayManager(uint16_t width, uint16_t height, uint8_t address, TwoWire& wire);
 
     bool begin();
 
@@ -26,6 +27,8 @@ private:
     uint16_t width;
     uint16_t height;
     uint8_t address;
+
+    TwoWire& wire;
 
     Adafruit_SSD1306 display;
 };

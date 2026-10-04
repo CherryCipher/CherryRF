@@ -18,7 +18,7 @@ enum class ScreenID
 class ScreenManager
 {
 public:
-    explicit ScreenManager(AppContext& context);
+    ScreenManager(AppContext& context);
     ~ScreenManager();
 
     void begin();
@@ -27,12 +27,20 @@ public:
     void show(ScreenID id);
     void home();
 
+    ScreenID getCurrentID() const;
+
 private:
-    void destroyCurrent();
     Screen* create(ScreenID id);
 
+    void destroyCurrent();
+    void applyPendingSwitch();
+
+private:
     AppContext& context;
 
     Screen* current = nullptr;
     ScreenID currentID = ScreenID::HOME;
+
+    bool switchPending = false;
+    ScreenID pendingID = ScreenID::HOME;
 };

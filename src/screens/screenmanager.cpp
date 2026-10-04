@@ -20,6 +20,7 @@ ScreenManager::~ScreenManager()
 void ScreenManager::begin()
 {
     show(ScreenID::HOME);
+    applyPendingSwitch();
 }
 
 void ScreenManager::destroyCurrent()
@@ -46,10 +47,20 @@ Screen* ScreenManager::create(ScreenID id)
 
 void ScreenManager::show(ScreenID id)
 {
+    pendingID = id;
+    switchPending = true;
+}
+
+void ScreenManager::applyPendingSwitch()
+{
+    if (!switchPending) return;
+
+    switchPending = false;
+
     destroyCurrent();
 
-    currentID = id;
-    current = create(id);
+    currentID = pendingID;
+    current = create(currentID);
 
     if (!current) return;
 
@@ -64,7 +75,11 @@ void ScreenManager::home()
 
 void ScreenManager::update()
 {
-    if (!current) return;
+    if (!current)
+    {
+        applyPendingSwitch();
+        return;
+    }
 
     current->update();
 
@@ -72,4 +87,11 @@ void ScreenManager::update()
 
     if (button != Button::NONE)
         current->handleButton(button);
+
+    applyPendingSwitch();
+}
+
+ScreenID ScreenManager::getCurrentID() const
+{
+    return currentID;
 }

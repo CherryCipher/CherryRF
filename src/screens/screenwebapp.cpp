@@ -24,7 +24,7 @@ void ScreenWebApp::enter()
 
 void ScreenWebApp::update()
 {
-    context.webApp->update();
+    // WebAppManager is updated globally from main.cpp.
 }
 
 void ScreenWebApp::handleButton(Button button)
@@ -42,23 +42,26 @@ void ScreenWebApp::render()
     display.clear();
     display.header("WEBAPP");
 
-    if (state == State::STARTING)
+    switch (state)
     {
-        display.centered(25, "STARTING WIFI...");
-    }
-    else if (state == State::RUNNING)
-    {
-        display.text(0, 14, "SSID:");
-        display.text(0, 24, context.webApp->getSSID());
+        case State::STARTING:
+            display.centered(25, "STARTING WIFI...");
+            break;
 
-        display.text(0, 36, "IP:");
-        display.text(0, 46, context.webApp->getIP());
-    }
-    else
-    {
-        display.centered(25, "START FAILED");
+        case State::RUNNING:
+            display.text(0, 14, "SSID:");
+            display.text(0, 24, context.webApp->getSSID());
+
+            display.text(0, 36, "IP:");
+            display.text(0, 46, context.webApp->getIP());
+            break;
+
+        case State::ERROR:
+            display.centered(20, "START FAILED");
+            display.centered(34, "CHECK SERIAL");
+            break;
     }
 
-    display.footer("< STOP");
+    display.footer("< BACK");
     display.show();
 }
