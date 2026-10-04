@@ -35,7 +35,9 @@ void ScreenCopy::update()
         state = State::READING_SOURCE;
         render();
 
-        NFCResult result = context.nfc->readTag(source, 250);
+        NFCResult result = context.nfc->readDetectedTag(tag, source);
+
+        context.nfc->resetReader();
 
         if (result != NFCResult::OK)
         {
@@ -46,8 +48,10 @@ void ScreenCopy::update()
         }
 
         sourceUID = source.tag.getUID();
+
         state = State::WAIT_SOURCE_REMOVAL;
         render();
+
         return;
     }
 
@@ -75,7 +79,9 @@ void ScreenCopy::update()
         state = State::WRITING_TARGET;
         render();
 
-        NFCResult result = context.nfc->writeTagData(source, 250);
+        NFCResult result = context.nfc->writeTagData(target, source);
+
+        context.nfc->resetReader();
 
         if (result == NFCResult::OK)
         {

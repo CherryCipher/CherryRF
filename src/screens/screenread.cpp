@@ -34,7 +34,9 @@ void ScreenRead::update()
     state = State::READING;
     render();
 
-    NFCResult result = context.nfc->readTag(data, 250);
+    NFCResult result = context.nfc->readDetectedTag(tag, data);
+
+    context.nfc->resetReader();
 
     if (result != NFCResult::OK)
     {

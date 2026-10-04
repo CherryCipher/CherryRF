@@ -14,13 +14,10 @@ bool NFCManager::start()
 {
     if (running) return true;
 
-    /*
-     * PN532 owns the primary I2C controller.
-     *
-     * SDA GPIO8
-     * SCL GPIO9
-     */
+    Serial.println("[NFC] Starting PN532...");
+
     Wire.begin(sda, scl);
+    Wire.setClock(100000);
 
     nfc.begin();
 
@@ -28,7 +25,7 @@ bool NFCManager::start()
 
     if (!version)
     {
-        Serial.println("[NFCManager] PN532 not found.");
+        Serial.println("[NFC] PN532 not found.");
         return false;
     }
 
@@ -36,23 +33,51 @@ bool NFCManager::start()
     uint8_t firmwareMajor = (version >> 16) & 0xFF;
     uint8_t firmwareMinor = (version >> 8) & 0xFF;
 
-    Serial.print("[NFCManager] PN5");
+    Serial.print("[NFC] PN5");
     Serial.println(chip, HEX);
 
-    Serial.print("[NFCManager] Firmware ");
+    Serial.print("[NFC] Firmware ");
     Serial.print(firmwareMajor);
     Serial.print(".");
     Serial.println(firmwareMinor);
 
     if (!nfc.SAMConfig())
     {
-        Serial.println("[NFCManager] SAMConfig failed.");
+        Serial.println("[NFC] SAMConfig failed.");
         return false;
     }
 
     running = true;
 
-    Serial.println("[NFCManager] Started.");
+    Serial.println("[NFC] Ready.");
+
+    return true;
+}
+
+bool NFCManager::resetReader()
+{
+    if (!running) return false;
+
+    /*
+     * Important:
+     *
+     * Do NOT call Wire.begin() here.
+     * Do NOT call nfc.begin() here.
+     *
+     * The PN532 and I2C controller stay initialized.
+     *
+     * SAMConfig puts the PN532 back into its normal reader
+     * configuration after reads, writes and MIFARE authentication.
+     */
+    delay(10);
+
+    if (!nfc.SAMConfig())
+    {
+        Serial.println("[NFC] Reader reset failed.");
+        return false;
+    }
+
+    delay(5);
 
     return true;
 }
@@ -95,6 +120,7 @@ void NFCManager::detectTagType(NFCTag& tag)
     if (tag.uidLength == 4 && detectClassic(tag))
     {
         tag.type = NFCTagType::MIFARE_CLASSIC;
+        tag.capacity = 47 * 16;
         tag.readable = true;
         tag.writable = true;
         return;
@@ -121,7 +147,6 @@ void NFCManager::detectTagType(NFCTag& tag)
         }
 
         tag.readable = true;
-        return;
     }
 }
 
@@ -150,13 +175,16 @@ bool NFCManager::detectClassic(const NFCTag& tag)
 
 NFCResult NFCManager::readTag(NFCTagData& data, uint16_t timeout)
 {
-    data.clear();
-
     NFCTag tag;
 
-    if (!scan(tag, timeout)) return NFCResult::NO_TAG;
+    if (!scan(tag, timeout))
+        return NFCResult::NO_TAG;
 
-    return readDetectedTag(tag, data);
+    NFCResult result = readDetectedTag(tag, data);
+
+    resetReader();
+
+    return result;
 }
 
 NFCResult NFCManager::readDetectedTag(const NFCTag& tag, NFCTagData& data)
@@ -168,21 +196,20 @@ NFCResult NFCManager::readDetectedTag(const NFCTag& tag, NFCTagData& data)
     {
         Type2TagHandler handler(*this, tag);
 
-        if (!handler.isReadable()) return NFCResult::READ_FAILED;
-        if (!handler.read(data.rawData)) return NFCResult::READ_FAILED;
+        if (!handler.isReadable())
+            return NFCResult::READ_FAILED;
+
+        if (!handler.read(data.rawData))
+            return NFCResult::READ_FAILED;
 
         Type2TagInfo info;
         std::vector<uint8_t> ndefBytes;
 
-        if (!handler.getInfo(info)) return NFCResult::INVALID_FORMAT;
-
-        if (!Type2TagFormat::findNDEF(
-            data.rawData,
-            info,
-            ndefBytes))
-        {
+        if (!handler.getInfo(info))
             return NFCResult::INVALID_FORMAT;
-        }
+
+        if (!Type2TagFormat::findNDEF(data.rawData, info, ndefBytes))
+            return NFCResult::INVALID_FORMAT;
 
         data.hasNDEF = info.hasNDEF && !ndefBytes.empty();
 
@@ -194,6 +221,7 @@ NFCResult NFCManager::readDetectedTag(const NFCTag& tag, NFCTagData& data)
                 data.ndef))
             {
                 data.hasNDEF = false;
+                data.ndef.clear();
             }
         }
 
@@ -220,6 +248,15 @@ NFCResult NFCManager::writeText(const String& text, uint16_t timeout)
     if (!scan(tag, timeout))
         return NFCResult::NO_TAG;
 
+    NFCResult result = writeText(tag, text);
+
+    resetReader();
+
+    return result;
+}
+
+NFCResult NFCManager::writeText(const NFCTag& tag, const String& text)
+{
     if (tag.type != NFCTagType::NTAG_ULTRALIGHT)
         return NFCResult::INCOMPATIBLE_TAG;
 
@@ -234,9 +271,7 @@ NFCResult NFCManager::writeText(const String& text, uint16_t timeout)
     return writeNDEFToType2(tag, ndef);
 }
 
-NFCResult NFCManager::writeNDEFToType2(
-    const NFCTag& tag,
-    const std::vector<uint8_t>& ndef)
+NFCResult NFCManager::writeNDEFToType2(const NFCTag& tag, const std::vector<uint8_t>& ndef)
 {
     Type2TagHandler handler(*this, tag);
 
@@ -261,26 +296,17 @@ NFCResult NFCManager::writeNDEFToType2(
     if (!handler.write(output))
         return NFCResult::WRITE_FAILED;
 
-    return verifyType2NDEF(ndef);
+    return verifyType2NDEF(tag, ndef);
 }
 
 NFCResult NFCManager::verifyType2NDEF(
+    const NFCTag& tag,
     const std::vector<uint8_t>& expected)
 {
-    NFCTagData verify;
-
-    NFCResult result = readTag(verify, 250);
-
-    if (result != NFCResult::OK)
+    if (tag.type != NFCTagType::NTAG_ULTRALIGHT)
         return NFCResult::VERIFY_FAILED;
 
-    if (!verify.hasNDEF)
-        return NFCResult::VERIFY_FAILED;
-
-    if (verify.tag.type != NFCTagType::NTAG_ULTRALIGHT)
-        return NFCResult::VERIFY_FAILED;
-
-    Type2TagHandler handler(*this, verify.tag);
+    Type2TagHandler handler(*this, tag);
 
     std::vector<uint8_t> actual;
 
@@ -316,6 +342,17 @@ NFCResult NFCManager::writeTagData(
     if (!scan(target, timeout))
         return NFCResult::NO_TAG;
 
+    NFCResult result = writeTagData(target, source);
+
+    resetReader();
+
+    return result;
+}
+
+NFCResult NFCManager::writeTagData(
+    const NFCTag& target,
+    const NFCTagData& source)
+{
     if (source.tag.type != target.type)
         return NFCResult::INCOMPATIBLE_TAG;
 

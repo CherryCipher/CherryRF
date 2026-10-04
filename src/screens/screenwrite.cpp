@@ -42,7 +42,9 @@ void ScreenWrite::update()
     state = State::WRITING;
     render();
 
-    NFCResult result = context.nfc->writeText(code, 250);
+    NFCResult result = context.nfc->writeText(tag, code);
+
+    context.nfc->resetReader();
 
     if (result == NFCResult::OK)
     {
