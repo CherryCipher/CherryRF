@@ -222,10 +222,77 @@ NFCResult NFCManager::readDetectedTag(const NFCTag& tag, NFCTagData& data)
         if (!handler.read(data.rawData))
             return NFCResult::AUTH_FAILED;
 
+        parseClassicData(data);
+
         return NFCResult::OK;
     }
 
     return NFCResult::UNSUPPORTED_TAG;
+}
+
+bool NFCManager::parseClassicData(NFCTagData& data)
+{
+    data.hasCherryRFData = false;
+    data.cherryRFType = CherryRFDataType::NONE;
+    data.cherryRFValue = "";
+
+    /*
+     * CherryRF Classic format:
+     *
+     * Byte 0-3 : "CRF1"
+     * Byte 4   : type
+     *            0x01 = Text
+     *            0x02 = URI
+     * Byte 5-6 : payload length, big endian
+     * Byte 7   : reserved
+     * Byte 8.. : payload
+     */
+    static constexpr size_t HEADER_SIZE = 8;
+
+    if (data.rawData.size() < HEADER_SIZE)
+        return false;
+
+    if (data.rawData[0] != 'C' ||
+        data.rawData[1] != 'R' ||
+        data.rawData[2] != 'F' ||
+        data.rawData[3] != '1')
+    {
+        return false;
+    }
+
+    uint8_t type = data.rawData[4];
+
+    size_t length =
+        ((size_t)data.rawData[5] << 8) |
+        (size_t)data.rawData[6];
+
+    if (length > data.rawData.size() - HEADER_SIZE)
+        return false;
+
+    switch (type)
+    {
+        case 0x01:
+            data.cherryRFType = CherryRFDataType::TEXT;
+            break;
+
+        case 0x02:
+            data.cherryRFType = CherryRFDataType::URI;
+            break;
+
+        default:
+            return false;
+    }
+
+    String value;
+    value.reserve(length);
+
+    for (size_t i = 0; i < length; i++)
+        value += (char)data.rawData[HEADER_SIZE + i];
+
+    data.cherryRFValue = value;
+    data.hasCherryRFData = true;
+
+    return true;
 }
 
 NFCResult NFCManager::writeText(const String& text, uint16_t timeout)
@@ -258,53 +325,93 @@ NFCResult NFCManager::writeText(const NFCTag& tag, const String& text)
     }
 
     if (tag.type == NFCTagType::MIFARE_CLASSIC)
-        return writeTextToClassic(tag, text);
+        return writeClassicData(tag, CherryRFDataType::TEXT, text);
 
     return NFCResult::INCOMPATIBLE_TAG;
 }
 
-NFCResult NFCManager::writeTextToClassic(const NFCTag& tag, const String& text)
+NFCResult NFCManager::writeURI(const String& uri, uint16_t timeout)
+{
+    NFCTag tag;
+
+    if (!scan(tag, timeout))
+        return NFCResult::NO_TAG;
+
+    NFCResult result = writeURI(tag, uri);
+
+    resetReader();
+
+    return result;
+}
+
+NFCResult NFCManager::writeURI(const NFCTag& tag, const String& uri)
+{
+    if (!tag.writable)
+        return NFCResult::READ_ONLY;
+
+    if (tag.type == NFCTagType::NTAG_ULTRALIGHT)
+    {
+        std::vector<uint8_t> ndef;
+
+        if (!NDEFManager::createURI(uri, ndef))
+            return NFCResult::INVALID_FORMAT;
+
+        return writeNDEFToType2(tag, ndef);
+    }
+
+    if (tag.type == NFCTagType::MIFARE_CLASSIC)
+        return writeClassicData(tag, CherryRFDataType::URI, uri);
+
+    return NFCResult::INCOMPATIBLE_TAG;
+}
+
+NFCResult NFCManager::writeClassicData(const NFCTag& tag, CherryRFDataType type, const String& value)
 {
     MifareClassicHandler handler(*this, tag);
 
     if (!handler.isWritable())
         return NFCResult::READ_ONLY;
 
-    /*
-     * CherryRF Classic text format:
-     *
-     * Byte 0-3 : "CRF1"
-     * Byte 4   : data type
-     *            0x01 = text
-     * Byte 5-6 : payload length, big endian
-     * Byte 7   : reserved
-     * Byte 8.. : UTF-8 text
-     */
     static constexpr size_t HEADER_SIZE = 8;
 
-    const size_t textLength = text.length();
+    size_t valueLength = value.length();
 
-    if (textLength > handler.capacity() - HEADER_SIZE)
+    if (valueLength > handler.capacity() - HEADER_SIZE)
         return NFCResult::NOT_ENOUGH_SPACE;
 
-    std::vector<uint8_t> output;
+    uint8_t typeByte = 0x00;
 
-    output.reserve(HEADER_SIZE + textLength);
+    switch (type)
+    {
+        case CherryRFDataType::TEXT:
+            typeByte = 0x01;
+            break;
+
+        case CherryRFDataType::URI:
+            typeByte = 0x02;
+            break;
+
+        default:
+            return NFCResult::INVALID_FORMAT;
+    }
+
+    std::vector<uint8_t> output;
+    output.reserve(HEADER_SIZE + valueLength);
 
     output.push_back('C');
     output.push_back('R');
     output.push_back('F');
     output.push_back('1');
 
-    output.push_back(0x01);
+    output.push_back(typeByte);
 
-    output.push_back((textLength >> 8) & 0xFF);
-    output.push_back(textLength & 0xFF);
+    output.push_back((valueLength >> 8) & 0xFF);
+    output.push_back(valueLength & 0xFF);
 
     output.push_back(0x00);
 
-    for (size_t i = 0; i < textLength; i++)
-        output.push_back((uint8_t)text[i]);
+    for (size_t i = 0; i < valueLength; i++)
+        output.push_back((uint8_t)value[i]);
 
     if (!handler.write(output))
         return NFCResult::WRITE_FAILED;
@@ -334,36 +441,6 @@ bool NFCManager::verifyClassicData(const NFCTag& tag, const std::vector<uint8_t>
     }
 
     return true;
-}
-
-NFCResult NFCManager::writeURI(const String& uri, uint16_t timeout)
-{
-    NFCTag tag;
-
-    if (!scan(tag, timeout))
-        return NFCResult::NO_TAG;
-
-    NFCResult result = writeURI(tag, uri);
-
-    resetReader();
-
-    return result;
-}
-
-NFCResult NFCManager::writeURI(const NFCTag& tag, const String& uri)
-{
-    if (tag.type != NFCTagType::NTAG_ULTRALIGHT)
-        return NFCResult::INCOMPATIBLE_TAG;
-
-    if (!tag.writable)
-        return NFCResult::READ_ONLY;
-
-    std::vector<uint8_t> ndef;
-
-    if (!NDEFManager::createURI(uri, ndef))
-        return NFCResult::INVALID_FORMAT;
-
-    return writeNDEFToType2(tag, ndef);
 }
 
 NFCResult NFCManager::writeNDEFToType2(const NFCTag& tag, const std::vector<uint8_t>& ndef)

@@ -49,7 +49,8 @@ private:
     NFCResult writeNDEFToType2(const NFCTag& tag, const std::vector<uint8_t>& ndef);
     NFCResult verifyType2NDEF(const NFCTag& tag, const std::vector<uint8_t>& expected);
 
-    NFCResult writeTextToClassic(const NFCTag& tag, const String& text);
+    NFCResult writeClassicData(const NFCTag& tag, CherryRFDataType type, const String& value);
+    bool parseClassicData(NFCTagData& data);
     bool verifyClassicData(const NFCTag& tag, const std::vector<uint8_t>& expected);
 
 private:

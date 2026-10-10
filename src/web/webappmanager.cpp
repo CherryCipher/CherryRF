@@ -330,6 +330,17 @@ void WebAppManager::sendTagData(const NFCTagData& data)
     json += "\"hasNDEF\":";
     json += data.hasNDEF ? "true," : "false,";
 
+    json += "\"hasCherryRFData\":";
+    json += data.hasCherryRFData ? "true," : "false,";
+
+    json += "\"cherryRFType\":\"";
+    json += escapeJSON(data.getCherryRFTypeName());
+    json += "\",";
+
+    json += "\"cherryRFValue\":\"";
+    json += escapeJSON(data.cherryRFValue);
+    json += "\",";
+
     json += "\"records\":[";
 
     for (size_t i = 0; i < data.ndef.records.size(); i++)
@@ -419,6 +430,9 @@ String WebAppManager::describeTagData(const NFCTagData& data) const
 
         return NDEFManager::getTypeName(record.type) + ": " + record.value;
     }
+
+    if (data.hasCherryRFData)
+        return data.getCherryRFTypeName() + ": " + data.cherryRFValue;
 
     return String(data.rawData.size()) + " raw bytes";
 }

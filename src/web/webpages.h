@@ -81,8 +81,6 @@ button {
     cursor:pointer;
 }
 
-button.secondary { background:#35353f; }
-
 input, textarea, select {
     width:100%;
     padding:11px;
@@ -186,9 +184,9 @@ pre {
         </div>
     </div>
 
-    <div id="ndefCard" class="card hidden">
-        <h2>NDEF Records</h2>
-        <div id="records"></div>
+    <div id="decodedCard" class="card hidden">
+        <h2>Decoded Data</h2>
+        <div id="decodedData"></div>
     </div>
 
     <div id="rawCard" class="card hidden">
@@ -201,9 +199,9 @@ pre {
 <section id="write" class="hidden">
 
     <div class="card">
-        <h2>Write NDEF</h2>
+        <h2>Write</h2>
 
-        <label>Record type</label>
+        <label>Data type</label>
 
         <select id="writeType" onchange="writeTypeChanged()">
             <option value="text">Text</option>
@@ -226,13 +224,9 @@ pre {
     <div class="card">
         <h2>Copy Tag</h2>
 
-        <p id="copyStatus">
-            Present the source tag.
-        </p>
+        <p id="copyStatus">Present the source tag.</p>
 
-        <button id="readSource" onclick="copyRead()">
-            READ SOURCE
-        </button>
+        <button id="readSource" onclick="copyRead()">READ SOURCE</button>
 
         <button
             id="writeTarget"
@@ -319,24 +313,48 @@ async function readTag()
 
         document.getElementById("tagCard").classList.remove("hidden");
 
-        const records = document.getElementById("records");
-        records.innerHTML = "";
+        const decoded = document.getElementById("decodedData");
+        decoded.innerHTML = "";
+
+        let hasDecodedData = false;
 
         if (d.records.length)
         {
-            d.records.forEach((r, i) =>
+            d.records.forEach((record, index) =>
             {
                 const div = document.createElement("div");
-                div.innerText = (i + 1) + ". " + r.type + ": " + r.value;
-                records.appendChild(div);
-            });
 
-            document.getElementById("ndefCard").classList.remove("hidden");
+                div.innerText =
+                    "NDEF " +
+                    record.type +
+                    ": " +
+                    record.value;
+
+                decoded.appendChild(div);
+
+                hasDecodedData = true;
+            });
         }
-        else
+
+        if (d.hasCherryRFData)
         {
-            document.getElementById("ndefCard").classList.add("hidden");
+            const div = document.createElement("div");
+
+            div.innerText =
+                "CherryRF " +
+                d.cherryRFType +
+                ": " +
+                d.cherryRFValue;
+
+            decoded.appendChild(div);
+
+            hasDecodedData = true;
         }
+
+        if (hasDecodedData)
+            document.getElementById("decodedCard").classList.remove("hidden");
+        else
+            document.getElementById("decodedCard").classList.add("hidden");
 
         document.getElementById("raw").innerText = d.raw;
         document.getElementById("rawCard").classList.remove("hidden");
