@@ -48,7 +48,10 @@ NFCManager nfc(
     Config::NFC_SCL
 );
 
-WebAppManager webApp;
+/*
+ * WebAppManager uses the existing NFCManager.
+ */
+WebAppManager webApp(nfc);
 
 AppContext context;
 
@@ -71,42 +74,66 @@ void setup()
      */
     Serial.println("[CherryRF] Starting OLED I2C...");
 
-    if (!OLEDWire.begin(Config::OLED_SDA, Config::OLED_SCL, 100000))
+    if (!OLEDWire.begin(
+        Config::OLED_SDA,
+        Config::OLED_SCL,
+        100000))
     {
-        Serial.println("[CherryRF] OLED I2C initialization failed.");
+        Serial.println(
+            "[CherryRF] OLED I2C initialization failed."
+        );
 
-        while (true) delay(1000);
+        while (true)
+            delay(1000);
     }
 
-    Serial.println("[CherryRF] OLED I2C started.");
+    Serial.println(
+        "[CherryRF] OLED I2C started."
+    );
 
     if (!display.begin())
     {
-        Serial.println("[CherryRF] OLED initialization failed.");
+        Serial.println(
+            "[CherryRF] OLED initialization failed."
+        );
 
-        while (true) delay(1000);
+        while (true)
+            delay(1000);
     }
 
-    Serial.println("[CherryRF] OLED started.");
+    Serial.println(
+        "[CherryRF] OLED started."
+    );
 
     /*
      * Start PN532 on the primary I2C bus.
      *
      * NFCManager initializes Wire using GPIO8/GPIO9.
      */
-    Serial.println("[CherryRF] Starting PN532...");
+    Serial.println(
+        "[CherryRF] Starting PN532..."
+    );
 
     if (!nfc.start())
     {
-        Serial.println("[CherryRF] PN532 initialization failed.");
+        Serial.println(
+            "[CherryRF] PN532 initialization failed."
+        );
 
         display.clear();
         display.header("CherryRF");
-        display.centered(20, "PN532 ERROR");
-        display.centered(34, "CHECK WIRING");
+        display.centered(
+            20,
+            "PN532 ERROR"
+        );
+        display.centered(
+            34,
+            "CHECK WIRING"
+        );
         display.show();
 
-        while (true) delay(1000);
+        while (true)
+            delay(1000);
     }
 
     context.nfc = &nfc;
@@ -117,13 +144,19 @@ void setup()
 
     screens.begin();
 
-    Serial.println("[CherryRF] Ready.");
+    Serial.println(
+        "[CherryRF] Ready."
+    );
 }
 
 void loop()
 {
     buttons.update();
     screens.update();
+
+    /*
+     * Only does work while WebApp mode is active.
+     */
     webApp.update();
 
     delay(2);

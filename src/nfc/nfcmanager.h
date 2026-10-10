@@ -25,6 +25,9 @@ public:
     NFCResult writeText(const String& text, uint16_t timeout = 250);
     NFCResult writeText(const NFCTag& tag, const String& text);
 
+    NFCResult writeURI(const String& uri, uint16_t timeout = 250);
+    NFCResult writeURI(const NFCTag& tag, const String& uri);
+
     NFCResult writeTagData(const NFCTagData& source, uint16_t timeout = 250);
     NFCResult writeTagData(const NFCTag& target, const NFCTagData& source);
 
@@ -45,6 +48,9 @@ private:
 
     NFCResult writeNDEFToType2(const NFCTag& tag, const std::vector<uint8_t>& ndef);
     NFCResult verifyType2NDEF(const NFCTag& tag, const std::vector<uint8_t>& expected);
+
+    NFCResult writeTextToClassic(const NFCTag& tag, const String& text);
+    bool verifyClassicData(const NFCTag& tag, const std::vector<uint8_t>& expected);
 
 private:
     uint8_t sda;

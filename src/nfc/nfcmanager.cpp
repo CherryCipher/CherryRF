@@ -58,17 +58,6 @@ bool NFCManager::resetReader()
 {
     if (!running) return false;
 
-    /*
-     * Important:
-     *
-     * Do NOT call Wire.begin() here.
-     * Do NOT call nfc.begin() here.
-     *
-     * The PN532 and I2C controller stay initialized.
-     *
-     * SAMConfig puts the PN532 back into its normal reader
-     * configuration after reads, writes and MIFARE authentication.
-     */
     delay(10);
 
     if (!nfc.SAMConfig())
@@ -159,7 +148,8 @@ bool NFCManager::detectNTAG()
 
 bool NFCManager::detectClassic(const NFCTag& tag)
 {
-    uint8_t key[6] = {
+    uint8_t key[6] =
+    {
         0xFF, 0xFF, 0xFF,
         0xFF, 0xFF, 0xFF
     };
@@ -215,10 +205,7 @@ NFCResult NFCManager::readDetectedTag(const NFCTag& tag, NFCTagData& data)
 
         if (data.hasNDEF)
         {
-            if (!NDEFManager::decode(
-                ndefBytes.data(),
-                ndefBytes.size(),
-                data.ndef))
+            if (!NDEFManager::decode(ndefBytes.data(), ndefBytes.size(), data.ndef))
             {
                 data.hasNDEF = false;
                 data.ndef.clear();
@@ -257,6 +244,114 @@ NFCResult NFCManager::writeText(const String& text, uint16_t timeout)
 
 NFCResult NFCManager::writeText(const NFCTag& tag, const String& text)
 {
+    if (!tag.writable)
+        return NFCResult::READ_ONLY;
+
+    if (tag.type == NFCTagType::NTAG_ULTRALIGHT)
+    {
+        std::vector<uint8_t> ndef;
+
+        if (!NDEFManager::createText(text, ndef))
+            return NFCResult::INVALID_FORMAT;
+
+        return writeNDEFToType2(tag, ndef);
+    }
+
+    if (tag.type == NFCTagType::MIFARE_CLASSIC)
+        return writeTextToClassic(tag, text);
+
+    return NFCResult::INCOMPATIBLE_TAG;
+}
+
+NFCResult NFCManager::writeTextToClassic(const NFCTag& tag, const String& text)
+{
+    MifareClassicHandler handler(*this, tag);
+
+    if (!handler.isWritable())
+        return NFCResult::READ_ONLY;
+
+    /*
+     * CherryRF Classic text format:
+     *
+     * Byte 0-3 : "CRF1"
+     * Byte 4   : data type
+     *            0x01 = text
+     * Byte 5-6 : payload length, big endian
+     * Byte 7   : reserved
+     * Byte 8.. : UTF-8 text
+     */
+    static constexpr size_t HEADER_SIZE = 8;
+
+    const size_t textLength = text.length();
+
+    if (textLength > handler.capacity() - HEADER_SIZE)
+        return NFCResult::NOT_ENOUGH_SPACE;
+
+    std::vector<uint8_t> output;
+
+    output.reserve(HEADER_SIZE + textLength);
+
+    output.push_back('C');
+    output.push_back('R');
+    output.push_back('F');
+    output.push_back('1');
+
+    output.push_back(0x01);
+
+    output.push_back((textLength >> 8) & 0xFF);
+    output.push_back(textLength & 0xFF);
+
+    output.push_back(0x00);
+
+    for (size_t i = 0; i < textLength; i++)
+        output.push_back((uint8_t)text[i]);
+
+    if (!handler.write(output))
+        return NFCResult::WRITE_FAILED;
+
+    if (!verifyClassicData(tag, output))
+        return NFCResult::VERIFY_FAILED;
+
+    return NFCResult::OK;
+}
+
+bool NFCManager::verifyClassicData(const NFCTag& tag, const std::vector<uint8_t>& expected)
+{
+    MifareClassicHandler handler(*this, tag);
+
+    std::vector<uint8_t> actual;
+
+    if (!handler.read(actual))
+        return false;
+
+    if (actual.size() < expected.size())
+        return false;
+
+    for (size_t i = 0; i < expected.size(); i++)
+    {
+        if (actual[i] != expected[i])
+            return false;
+    }
+
+    return true;
+}
+
+NFCResult NFCManager::writeURI(const String& uri, uint16_t timeout)
+{
+    NFCTag tag;
+
+    if (!scan(tag, timeout))
+        return NFCResult::NO_TAG;
+
+    NFCResult result = writeURI(tag, uri);
+
+    resetReader();
+
+    return result;
+}
+
+NFCResult NFCManager::writeURI(const NFCTag& tag, const String& uri)
+{
     if (tag.type != NFCTagType::NTAG_ULTRALIGHT)
         return NFCResult::INCOMPATIBLE_TAG;
 
@@ -265,7 +360,7 @@ NFCResult NFCManager::writeText(const NFCTag& tag, const String& text)
 
     std::vector<uint8_t> ndef;
 
-    if (!NDEFManager::createText(text, ndef))
+    if (!NDEFManager::createURI(uri, ndef))
         return NFCResult::INVALID_FORMAT;
 
     return writeNDEFToType2(tag, ndef);
@@ -285,13 +380,8 @@ NFCResult NFCManager::writeNDEFToType2(const NFCTag& tag, const std::vector<uint
 
     std::vector<uint8_t> output;
 
-    if (!Type2TagFormat::buildNDEFDataArea(
-        current,
-        ndef,
-        output))
-    {
+    if (!Type2TagFormat::buildNDEFDataArea(current, ndef, output))
         return NFCResult::NOT_ENOUGH_SPACE;
-    }
 
     if (!handler.write(output))
         return NFCResult::WRITE_FAILED;
@@ -299,9 +389,7 @@ NFCResult NFCManager::writeNDEFToType2(const NFCTag& tag, const std::vector<uint
     return verifyType2NDEF(tag, ndef);
 }
 
-NFCResult NFCManager::verifyType2NDEF(
-    const NFCTag& tag,
-    const std::vector<uint8_t>& expected)
+NFCResult NFCManager::verifyType2NDEF(const NFCTag& tag, const std::vector<uint8_t>& expected)
 {
     if (tag.type != NFCTagType::NTAG_ULTRALIGHT)
         return NFCResult::VERIFY_FAILED;
@@ -319,13 +407,8 @@ NFCResult NFCManager::verifyType2NDEF(
     if (!handler.getInfo(info))
         return NFCResult::VERIFY_FAILED;
 
-    if (!Type2TagFormat::findNDEF(
-        actual,
-        info,
-        ndef))
-    {
+    if (!Type2TagFormat::findNDEF(actual, info, ndef))
         return NFCResult::VERIFY_FAILED;
-    }
 
     if (ndef != expected)
         return NFCResult::VERIFY_FAILED;
@@ -333,9 +416,7 @@ NFCResult NFCManager::verifyType2NDEF(
     return NFCResult::OK;
 }
 
-NFCResult NFCManager::writeTagData(
-    const NFCTagData& source,
-    uint16_t timeout)
+NFCResult NFCManager::writeTagData(const NFCTagData& source, uint16_t timeout)
 {
     NFCTag target;
 
@@ -349,9 +430,7 @@ NFCResult NFCManager::writeTagData(
     return result;
 }
 
-NFCResult NFCManager::writeTagData(
-    const NFCTag& target,
-    const NFCTagData& source)
+NFCResult NFCManager::writeTagData(const NFCTag& target, const NFCTagData& source)
 {
     if (source.tag.type != target.type)
         return NFCResult::INCOMPATIBLE_TAG;
@@ -370,22 +449,13 @@ NFCResult NFCManager::writeTagData(
 
         if (record.type == NDEFRecordType::TEXT)
         {
-            if (!NDEFManager::createText(
-                record.value,
-                ndef,
-                record.language))
-            {
+            if (!NDEFManager::createText(record.value, ndef, record.language))
                 return NFCResult::INVALID_FORMAT;
-            }
         }
         else if (record.type == NDEFRecordType::URI)
         {
-            if (!NDEFManager::createURI(
-                record.value,
-                ndef))
-            {
+            if (!NDEFManager::createURI(record.value, ndef))
                 return NFCResult::INVALID_FORMAT;
-            }
         }
         else
         {
@@ -438,11 +508,7 @@ bool NFCManager::writePage(uint8_t page, const uint8_t* data)
     );
 }
 
-bool NFCManager::authenticateClassic(
-    const NFCTag& tag,
-    uint8_t block,
-    const uint8_t* key,
-    bool keyB)
+bool NFCManager::authenticateClassic(const NFCTag& tag, uint8_t block, const uint8_t* key, bool keyB)
 {
     if (!running || !key) return false;
     if (!tag.valid()) return false;
