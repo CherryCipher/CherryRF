@@ -15,8 +15,8 @@ namespace Config
     // Buttons
     static constexpr uint8_t BUTTON_UP = 26;
     static constexpr uint8_t BUTTON_DOWN = 25;
-    static constexpr uint8_t BUTTON_SELECT = 5;
-    static constexpr uint8_t BUTTON_BACK = 10;
+    static constexpr uint8_t BUTTON_SELECT = 10;
+    static constexpr uint8_t BUTTON_BACK = 5;
 
     // OLED
     static constexpr uint8_t OLED_ADDRESS = 0x3C;
