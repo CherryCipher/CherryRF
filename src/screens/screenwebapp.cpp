@@ -2,6 +2,7 @@
 
 #include "../display/DisplayManager.h"
 #include "../web/WebAppManager.h"
+#include "../Config.h"
 #include "ScreenManager.h"
 
 ScreenWebApp::ScreenWebApp(AppContext& context)
@@ -49,11 +50,14 @@ void ScreenWebApp::render()
             break;
 
         case State::RUNNING:
-            display.text(0, 14, "SSID:");
-            display.text(0, 24, context.webApp->getSSID());
+            display.text(0, 13, "SSID:");
+            display.text(34, 13, context.webApp->getSSID());
 
-            display.text(0, 36, "IP:");
-            display.text(0, 46, context.webApp->getIP());
+            display.text(0, 25, "PW:");
+            display.text(22, 25, Config::WEBAPP_PASSWORD);
+
+            display.text(0, 37, "IP:");
+            display.text(22, 37, context.webApp->getIP());
             break;
 
         case State::ERROR:
