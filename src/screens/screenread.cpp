@@ -78,13 +78,20 @@ void ScreenRead::buildLines()
                 lines.push_back(record.value);
         }
     }
+    else if (data.hasCherryRFData)
+    {
+        lines.push_back("CHERRYRF:");
+        lines.push_back(data.getCherryRFTypeName());
+
+        if (data.cherryRFValue.length())
+            lines.push_back(data.cherryRFValue);
+    }
     else
     {
-        lines.push_back("NDEF:");
+        lines.push_back("DATA:");
         lines.push_back("NONE");
     }
 }
-
 void ScreenRead::handleButton(Button button)
 {
     if (button == Button::BACK)
